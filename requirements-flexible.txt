@@ -1,0 +1,39 @@
+# Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Pydantic
+pydantic>=2.9
+pydantic-settings>=2.6
+
+# LangChain ecosystem
+langchain>=0.3.25
+langchain-community>=0.3.25
+langchain-groq>=0.3
+langchain-huggingface>=0.1.2
+langchain-chroma>=0.2.5
+
+# Vector DB
+chromadb>=0.5
+
+# Embeddings
+sentence-transformers>=3.0
+
+# LLM
+groq>=0.18
+
+# Document processing
+pypdf>=5.0
+docx2txt
+
+# ML / Explainability
+xgboost>=2.1
+shap>=0.46
+scikit-learn>=1.5
+numpy>=2.0
+joblib>=1.4
+
+# Utils
+python-dotenv>=1.0
+aiofiles>=24.0
