@@ -106,3 +106,57 @@ def chunk_documents(
         f"Created {len(chunks)} chunks for policy '{policy_metadata.get('policy_name', 'unknown')}'"
     )
     return chunks
+
+
+def _flatten_rider_meta_for_chroma(rider_meta: Dict[str, Any]) -> Dict[str, Any]:
+    """ChromaDB metadata values must be primitives. Flatten list fields into CSV strings."""
+    flat = dict(rider_meta)
+    for k in ("applicable_policies", "target_goals"):
+        v = flat.get(k)
+        if isinstance(v, list):
+            flat[k] = ",".join(v)
+    return flat
+
+
+def chunk_rider_document(
+    docs: List[Document],
+    source_file: str,
+    riders: List[Dict[str, Any]],
+) -> List[Document]:
+    """
+    For a riders-bundle document, produce chunks of the full text tagged with
+    generic rider-document metadata (used so the rider doc is searchable in
+    RAG retrieval). Individual rider structured metadata lives in the registry.
+
+    Each chunk metadata:
+        doc_type='rider', source_file, section, page_num, chunk_index,
+        rider_codes (CSV of all codes extracted from this doc)
+    """
+    splitter = build_splitter()
+    rider_codes_csv = ",".join(r.get("rider_code", "") for r in riders if r.get("rider_code"))
+    chunks: List[Document] = []
+
+    for doc in docs:
+        splits = splitter.split_text(doc.page_content)
+        page_num = doc.metadata.get("page", 0)
+
+        for idx, split_text in enumerate(splits):
+            if not split_text.strip():
+                continue
+            chunks.append(Document(
+                page_content=split_text.strip(),
+                metadata={
+                    "doc_type": "rider",
+                    "source_file": source_file,
+                    "page_num": page_num,
+                    "chunk_index": idx,
+                    "section": detect_section(split_text),
+                    "rider_codes": rider_codes_csv,
+                    # Provide a generic policy_name so existing queries that
+                    # read policy_name don't crash.
+                    "policy_name": "__riders_bundle__",
+                },
+            ))
+
+    logger.info(f"Created {len(chunks)} rider chunks from '{source_file}'")
+    return chunks

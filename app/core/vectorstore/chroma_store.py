@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Path for the policy registry (structured metadata for scorer)
 POLICY_REGISTRY_PATH = Path(settings.MODEL_SAVE_DIR) / "policy_registry.json"
+RIDER_REGISTRY_PATH = Path(settings.MODEL_SAVE_DIR) / "rider_registry.json"
 
 
 def get_embeddings() -> HuggingFaceEmbeddings:
@@ -123,3 +124,71 @@ def load_policy_registry() -> Dict[str, Any]:
         return {}
     with open(POLICY_REGISTRY_PATH, "r") as f:
         return json.load(f)
+
+
+# ─── Rider Registry ──────────────────────────────────────────────────────────
+
+def save_rider_to_registry(rider_meta: Dict[str, Any]) -> None:
+    """Persist structured rider metadata for the rider scorer."""
+    RIDER_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    registry: Dict = {}
+    if RIDER_REGISTRY_PATH.exists():
+        with open(RIDER_REGISTRY_PATH, "r") as f:
+            registry = json.load(f)
+    registry[rider_meta["rider_code"]] = rider_meta
+    with open(RIDER_REGISTRY_PATH, "w") as f:
+        json.dump(registry, f, indent=2)
+    logger.info(f"Saved rider '{rider_meta['rider_code']}' to rider registry")
+
+
+def load_rider_registry() -> Dict[str, Any]:
+    if not RIDER_REGISTRY_PATH.exists():
+        return {}
+    with open(RIDER_REGISTRY_PATH, "r") as f:
+        return json.load(f)
+
+
+def clear_rider_registry() -> None:
+    """Replace the whole rider registry (used before re-ingesting the bundle)."""
+    if RIDER_REGISTRY_PATH.exists():
+        RIDER_REGISTRY_PATH.unlink()
+        logger.info("Cleared rider registry")
+
+
+def delete_all_rider_chunks() -> int:
+    """Remove every chunk with doc_type='rider' from ChromaDB."""
+    try:
+        client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+        collection = client.get_collection(settings.CHROMA_COLLECTION_NAME)
+        results = collection.get(where={"doc_type": "rider"})
+        if results["ids"]:
+            collection.delete(ids=results["ids"])
+            logger.info(f"Deleted {len(results['ids'])} rider chunks")
+            return len(results["ids"])
+        return 0
+    except Exception as e:
+        logger.warning(f"delete_all_rider_chunks failed: {e}")
+        return 0
+
+
+def delete_rider(rider_code: str) -> bool:
+    """Delete one rider's chunks + registry entry."""
+    try:
+        client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+        collection = client.get_collection(settings.CHROMA_COLLECTION_NAME)
+        results = collection.get(where={"$and": [{"doc_type": "rider"}, {"rider_code": rider_code}]})
+        if results["ids"]:
+            collection.delete(ids=results["ids"])
+        # Remove from registry
+        if RIDER_REGISTRY_PATH.exists():
+            with open(RIDER_REGISTRY_PATH, "r") as f:
+                reg = json.load(f)
+            if rider_code in reg:
+                del reg[rider_code]
+                with open(RIDER_REGISTRY_PATH, "w") as f:
+                    json.dump(reg, f, indent=2)
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"delete_rider '{rider_code}' failed: {e}")
+        return False

@@ -11,6 +11,7 @@ from app.core.rag.prompts import (
     RECOMMENDATION_PROMPT,
     CHAT_PROMPT,
     METADATA_EXTRACTION_PROMPT,
+    RIDERS_EXTRACTION_PROMPT,
 )
 from app.core.vectorstore.chroma_store import similarity_search, similarity_search_for_policy
 from app.models.schemas import UserProfile, PolicyMetadata
@@ -21,6 +22,65 @@ MAX_HISTORY_TURNS = 6  # Keep last 6 turns (12 messages)
 
 
 # ─── Metadata Extraction ──────────────────────────────────────────────────────
+
+def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -> List[Dict[str, Any]]:
+    """
+    Extract an array of rider metadata objects from a riders-bundle document.
+
+    Each returned dict has fields matching RiderMetadata. applicable_policies
+    entries are constrained to the known_policy_names list (prompt enforces this,
+    we also filter defensively).
+    """
+    llm = get_groq_llm(temperature=0.0)
+    prompt = RIDERS_EXTRACTION_PROMPT.format(
+        document_excerpt=document_text[:8000],
+        known_policy_names="\n".join(f"- {n}" for n in known_policy_names) or "(none)",
+    )
+    try:
+        result = llm.invoke(prompt)
+        raw = result.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        data = json.loads(raw.strip())
+        riders = data.get("riders", []) if isinstance(data, dict) else []
+    except Exception as e:
+        logger.error(f"Rider extraction failed: {e}")
+        return []
+
+    valid_policy_set = set(known_policy_names)
+    out: List[Dict[str, Any]] = []
+    seen_codes = set()
+    for r in riders:
+        if not isinstance(r, dict):
+            continue
+        name = (r.get("rider_name") or "").strip()
+        code = (r.get("rider_code") or "").strip().upper().replace(" ", "-")
+        if not name or not code:
+            continue
+        if code in seen_codes:
+            # de-dup codes extracted twice by LLM
+            continue
+        seen_codes.add(code)
+        applicable = [p for p in (r.get("applicable_policies") or []) if p in valid_policy_set]
+        out.append({
+            "rider_name": name,
+            "rider_code": code,
+            "category": (r.get("category") or "other").strip().lower(),
+            "company": r.get("company"),
+            "description": r.get("description"),
+            "min_age": int(r.get("min_age") or 18),
+            "max_age": int(r.get("max_age") or 65),
+            "premium_level": int(r.get("premium_level") or 1),
+            "applicable_policies": applicable,
+            "target_goals": [g for g in (r.get("target_goals") or []) if isinstance(g, str)],
+            "health_relevant": bool(r.get("health_relevant", False)),
+            "hazard_relevant": bool(r.get("hazard_relevant", False)),
+            "dependents_relevant": bool(r.get("dependents_relevant", False)),
+        })
+    return out
+
 
 def extract_policy_metadata_with_llm(document_text: str, filename: str) -> Dict[str, Any]:
     """Use Groq to extract structured policy metadata from document content."""

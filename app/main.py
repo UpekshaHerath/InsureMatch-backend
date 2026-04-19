@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.routes import ingest, recommend, explain, chat, policies
+from app.api.routes import ingest, recommend, explain, chat, policies, riders
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,6 +62,7 @@ app.include_router(recommend.router)
 app.include_router(explain.router)
 app.include_router(chat.router)
 app.include_router(policies.router)
+app.include_router(riders.router)
 
 
 @app.get("/", tags=["Health"])

@@ -100,6 +100,10 @@ async def get_profile(user_id: str) -> Optional[Dict[str, Any]]:
 # ─── recommendations ────────────────────────────────────────────────────────
 
 async def insert_recommendation(user_id: str, session_id: str, resp) -> None:
+    rider_suggestions = {}
+    raw = getattr(resp, "rider_suggestions", {}) or {}
+    for policy_name, riders in raw.items():
+        rider_suggestions[policy_name] = [r.model_dump() for r in riders]
     payload = {
         "user_id": user_id,
         "session_id": session_id,
@@ -107,6 +111,7 @@ async def insert_recommendation(user_id: str, session_id: str, resp) -> None:
         "ranked_policies": [p.model_dump() for p in resp.ranked_policies],
         "explanations": [e.model_dump() for e in resp.explanations],
         "rag_narrative": resp.rag_narrative,
+        "rider_suggestions": rider_suggestions,
     }
     await _request(
         "POST", "/recommendations",

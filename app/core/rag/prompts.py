@@ -100,6 +100,55 @@ Apply the scope rules from the system message. If off-topic, reply with the exac
 
 # ─── Policy metadata extraction prompt ───────────────────────────────────────
 
+# ─── Rider batch metadata extraction prompt ──────────────────────────────────
+
+RIDERS_EXTRACTION_PROMPT = PromptTemplate(
+    input_variables=["document_excerpt", "known_policy_names"],
+    template="""Extract ALL insurance riders described in this document and the policies each rider can be attached to.
+
+A "rider" is an add-on coverage option that attaches to a base policy (e.g. Critical Illness Rider, Accidental Death Benefit, Waiver of Premium, Hospital Cash). Each rider usually lists the policies it is compatible with.
+
+## Known policy names already in the system (use these EXACT names when a rider applies to them; ignore any policies not in this list):
+{known_policy_names}
+
+## Riders document excerpt
+\"\"\"
+{document_excerpt}
+\"\"\"
+
+Return ONLY a valid JSON object of the form:
+{{
+  "riders": [
+    {{
+      "rider_name": "full display name of the rider",
+      "rider_code": "short stable identifier derived from the name, uppercase with hyphens (e.g. 'CRITICAL-ILLNESS', 'ADB', 'WOP')",
+      "category": "one of: critical_illness, accidental_death, waiver_of_premium, hospital_cash, income_protection, permanent_disability, term_extension, other",
+      "company": "insurance company name or null",
+      "description": "one short sentence",
+      "min_age": 18,
+      "max_age": 65,
+      "premium_level": 1,
+      "applicable_policies": ["<exact policy_name from the Known policy names list above>", ...],
+      "target_goals": ["<zero or more of: protection, health_coverage, savings_and_investment, retirement, cheap_and_quick>"],
+      "health_relevant": false,
+      "hazard_relevant": false,
+      "dependents_relevant": false
+    }}
+  ]
+}}
+
+Rules:
+- premium_level: 0=low/basic, 1=medium/standard, 2=high/premium
+- health_relevant: true if the rider is primarily useful to people with health conditions (critical illness, hospital cash, major surgical, etc.)
+- hazard_relevant: true if primarily useful to people in hazardous occupations (accidental death, permanent disability, accident medical, etc.)
+- dependents_relevant: true if primarily useful to people with dependents (waiver of premium, income protection, family income benefit, etc.)
+- applicable_policies must ONLY contain names from the Known policy names list. If a rider in the doc mentions a policy not in that list, drop it from applicable_policies.
+- If the document is ambiguous about applicability, leave applicable_policies as an empty list rather than guessing.
+
+Return ONLY the JSON object. No prose, no markdown fences."""
+)
+
+
 METADATA_EXTRACTION_PROMPT = PromptTemplate(
     input_variables=["document_excerpt", "filename"],
     template="""Extract structured metadata from this insurance policy document.

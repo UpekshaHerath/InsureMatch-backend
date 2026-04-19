@@ -10,11 +10,13 @@ from app.models.schemas import (
     UserProfile,
     RecommendationResponse,
     PolicyScore,
+    RiderRecommendation,
 )
 from app.core.recommendation.scorer import score_policies
 from app.core.recommendation.explainer import explain_multiple_policies
+from app.core.recommendation.rider_scorer import rank_riders_for_policy
 from app.core.rag.chain import generate_recommendation_narrative
-from app.core.vectorstore.chroma_store import load_policy_registry
+from app.core.vectorstore.chroma_store import load_policy_registry, load_rider_registry
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,22 @@ async def recommend(profile: UserProfile, top_k: int = 3) -> RecommendationRespo
         ranked_policy_names=runner_up_names,
     )
 
+    # 7. Rider suggestions — gap-closers per top policy
+    rider_registry = load_rider_registry()
+    rider_suggestions: Dict[str, List[RiderRecommendation]] = {}
+    if rider_registry:
+        for sp in top_scored:
+            meta = sp["policy_meta"]
+            ranked_riders = rank_riders_for_policy(
+                profile=profile,
+                policy_meta=meta,
+                rider_registry=rider_registry,
+                top_n=3,
+            )
+            rider_suggestions[sp["policy_name"]] = [
+                RiderRecommendation(**r) for r in ranked_riders
+            ]
+
     session_id = str(uuid.uuid4())
 
     return RecommendationResponse(
@@ -82,4 +100,5 @@ async def recommend(profile: UserProfile, top_k: int = 3) -> RecommendationRespo
         explanations=explanations,
         rag_narrative=narrative,
         session_id=session_id,
+        rider_suggestions=rider_suggestions,
     )

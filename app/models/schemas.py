@@ -125,6 +125,24 @@ class PolicyMetadata(BaseModel):
     description: Optional[str] = None
 
 
+# ─── Rider Metadata (stored alongside ChromaDB rider chunks) ──────────────────
+
+class RiderMetadata(BaseModel):
+    rider_name: str
+    rider_code: str  # stable ID
+    category: str  # critical_illness | accidental_death | waiver_of_premium | hospital_cash | income_protection | permanent_disability | term_extension | other
+    company: Optional[str] = None
+    description: Optional[str] = None
+    min_age: int = 18
+    max_age: int = 65
+    premium_level: int = Field(default=1, ge=0, le=2)
+    applicable_policies: List[str] = Field(default_factory=list)  # policy_names this rider can attach to
+    target_goals: List[str] = Field(default_factory=list)  # e.g. ["health_coverage","protection"]
+    health_relevant: bool = False
+    hazard_relevant: bool = False
+    dependents_relevant: bool = False
+
+
 # ─── Request / Response Models ────────────────────────────────────────────────
 
 class RecommendationRequest(BaseModel):
@@ -155,12 +173,24 @@ class PolicyExplanation(BaseModel):
     shap_summary: str
 
 
+class RiderRecommendation(BaseModel):
+    rider_name: str
+    rider_code: str
+    category: str
+    description: Optional[str] = None
+    premium_level: int = 1
+    score: float  # 0..1 gap-closer score
+    reasons: List[str] = Field(default_factory=list)
+
+
 class RecommendationResponse(BaseModel):
     ranked_policies: List[PolicyScore]
     top_recommendation: str
     explanations: List[PolicyExplanation]
     rag_narrative: str
     session_id: str
+    # policy_name → ranked rider suggestions (best fit first)
+    rider_suggestions: Dict[str, List[RiderRecommendation]] = Field(default_factory=dict)
 
 
 class ChatRequest(BaseModel):
@@ -181,6 +211,13 @@ class IngestResponse(BaseModel):
     policy_name: str
     chunks_indexed: int
     policy_metadata: Dict[str, Any]
+
+
+class RiderIngestResponse(BaseModel):
+    message: str
+    riders_extracted: int
+    chunks_indexed: int
+    riders: List[RiderMetadata]
 
 
 class PolicyListItem(BaseModel):
