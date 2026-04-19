@@ -17,8 +17,6 @@ from app.models.schemas import UserProfile, PolicyMetadata
 
 logger = logging.getLogger(__name__)
 
-# In-memory chat session store: session_id -> list of (role, message) tuples
-_chat_sessions: Dict[str, List[Tuple[str, str]]] = {}
 MAX_HISTORY_TURNS = 6  # Keep last 6 turns (12 messages)
 
 
@@ -148,31 +146,50 @@ async def generate_recommendation_narrative(
 
 # ─── Chat Chain ───────────────────────────────────────────────────────────────
 
-async def chat(session_id: str, message: str, user_profile: UserProfile = None) -> Tuple[str, List[str]]:
-    """Handle a chat message and return (response, source_policy_names)."""
+async def chat(
+    session_id: str,
+    user_id: str,
+    message: str,
+    user_profile: UserProfile = None,
+    recommendation_context: str = None,
+) -> Tuple[str, List[str]]:
+    """Handle a chat message (history persisted in Supabase). Returns (response, sources)."""
+    from app.core.db import supabase_client as db
+
     llm = get_groq_llm(temperature=0.2)
 
-    # Get or create session history
-    if session_id not in _chat_sessions:
-        _chat_sessions[session_id] = []
-    history = _chat_sessions[session_id]
+    # Ensure session row exists (upsert)
+    try:
+        await db.ensure_session(user_id, session_id)
+    except Exception as e:
+        logger.warning(f"ensure_session failed: {e}")
+
+    # Load prior messages from DB
+    try:
+        rows = await db.list_messages(session_id, user_id, limit=MAX_HISTORY_TURNS * 2)
+    except Exception as e:
+        logger.warning(f"list_messages failed: {e}")
+        rows = []
+    history: List[Tuple[str, str]] = [(r["role"], r["content"]) for r in rows]
 
     # Build retrieval query (combine user message + profile context if available)
     retrieval_query = message
     if user_profile:
         retrieval_query = f"{message} | User context: {_build_user_query(user_profile)}"
 
-    # Retrieve relevant policy chunks
     retrieved_docs = similarity_search(retrieval_query, k=6)
     context = _format_rag_context(retrieved_docs)
     sources = list({d.metadata.get("policy_name", "unknown") for d in retrieved_docs})
-
-    # Format conversation history
     chat_history_str = format_chat_history(history)
+
+    profile_summary = _build_profile_summary(user_profile) if user_profile else "No profile on record."
+    rec_summary = recommendation_context or "No prior recommendation results available in this session."
 
     try:
         chain = CHAT_PROMPT | llm | StrOutputParser()
         response = await chain.ainvoke({
+            "user_profile_summary": profile_summary,
+            "recommendation_summary": rec_summary,
             "context": context,
             "chat_history": chat_history_str,
             "question": message,
@@ -181,21 +198,47 @@ async def chat(session_id: str, message: str, user_profile: UserProfile = None) 
         logger.error(f"Chat failed: {e}")
         response = "I'm sorry, I encountered an error processing your question. Please try again."
 
-    # Update session history
-    history.append(("human", message))
-    history.append(("ai", response))
-    # Trim to max turns
-    if len(history) > MAX_HISTORY_TURNS * 2:
-        _chat_sessions[session_id] = history[-(MAX_HISTORY_TURNS * 2):]
+    # Persist turn
+    try:
+        await db.insert_message(user_id, session_id, "human", message)
+        await db.insert_message(user_id, session_id, "ai", response, sources=sources)
+        await db.touch_session(session_id, user_id)
+    except Exception as e:
+        logger.warning(f"persist chat turn failed: {e}")
 
     return response, sources
 
 
-def clear_session(session_id: str) -> None:
-    _chat_sessions.pop(session_id, None)
+async def clear_session(session_id: str, user_id: str) -> None:
+    from app.core.db import supabase_client as db
+    try:
+        await db.delete_session(session_id, user_id)
+    except Exception as e:
+        logger.warning(f"delete_session failed: {e}")
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _build_profile_summary(profile: UserProfile) -> str:
+    """Readable profile block for the chat prompt."""
+    p = profile.personal
+    o = profile.occupation
+    g = profile.goals
+    l = profile.lifestyle
+    lines = [
+        f"- Age: {p.age} | Gender: {p.gender.value} | Marital status: {p.marital_status.value}",
+        f"- Dependents: {p.num_dependents} | Location: {p.city or 'N/A'}, {p.district or 'N/A'}",
+        f"- Occupation: {o.occupation} ({o.employment_type.value}) | Monthly income: LKR {o.monthly_income_lkr:,.0f}",
+        f"- Hazardous level: {o.hazardous_level.value}",
+        f"- Primary goal: {g.primary_goal.value.replace('_', ' ')}",
+    ]
+    if g.secondary_goal:
+        lines.append(f"- Secondary goal: {g.secondary_goal.value.replace('_', ' ')}")
+    lines.append(f"- Health: {build_health_summary(profile)}")
+    lines.append(f"- BMI: {l.bmi} | Smoker: {'Yes' if l.is_smoker else 'No'} | Alcohol: {'Yes' if l.is_alcohol_consumer else 'No'}")
+    lines.append(f"- Has existing insurance: {'Yes' if o.has_existing_insurance else 'No'}")
+    return "\n".join(lines)
+
 
 def _build_user_query(profile: UserProfile) -> str:
     """Convert user profile to a natural language query for semantic retrieval."""

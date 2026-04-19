@@ -167,6 +167,7 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     user_profile: Optional[UserProfile] = None
+    recommendation_context: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

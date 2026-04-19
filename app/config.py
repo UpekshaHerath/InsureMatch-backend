@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
+    # Supabase
+    SUPABASE_URL: str
+    SUPABASE_SERVICE_ROLE_KEY: str
+    SUPABASE_JWT_SECRET: str
+
     # ChromaDB
     CHROMA_PERSIST_DIR: str = str(BASE_DIR / "vectordb")
     CHROMA_COLLECTION_NAME: str = "insurance_policies"

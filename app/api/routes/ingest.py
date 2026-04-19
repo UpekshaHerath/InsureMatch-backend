@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 import aiofiles
 
 from app.core.ingestion.loader import load_document, SUPPORTED_EXTENSIONS
@@ -15,6 +15,7 @@ from app.core.vectorstore.chroma_store import (
     delete_policy,
 )
 from app.core.rag.chain import extract_policy_metadata_with_llm
+from app.core.auth.deps import require_admin, AuthUser
 from app.models.schemas import IngestResponse, PolicyMetadata
 
 router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
@@ -34,6 +35,7 @@ async def ingest_document(
     covers_life: Optional[bool] = Form(None),
     covers_accident: Optional[bool] = Form(None),
     is_entry_level: Optional[bool] = Form(None),
+    _: AuthUser = Depends(require_admin),
 ):
     """
     Upload and index an insurance policy document.
@@ -113,7 +115,10 @@ async def ingest_document(
 
 
 @router.delete("/{policy_name}")
-async def delete_policy_endpoint(policy_name: str):
+async def delete_policy_endpoint(
+    policy_name: str,
+    _: AuthUser = Depends(require_admin),
+):
     """Remove all indexed chunks for a given policy."""
     deleted = delete_policy(policy_name)
     if not deleted:
