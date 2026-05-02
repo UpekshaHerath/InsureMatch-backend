@@ -13,6 +13,7 @@ from app.core.vectorstore.chroma_store import (
     add_documents,
     save_policy_to_registry,
     delete_policy,
+    delete_all_policies,
 )
 from app.core.rag.chain import extract_policy_metadata_with_llm
 from app.core.auth.deps import require_admin, AuthUser
@@ -114,12 +115,19 @@ async def ingest_document(
         os.unlink(tmp_path)
 
 
+@router.delete("")
+async def clear_all_policies(_: AuthUser = Depends(require_admin)):
+    """Wipe every policy (chunks + registry). Rider catalog is preserved."""
+    n = delete_all_policies()
+    return {"message": f"Cleared policy catalog ({n} chunks removed)."}
+
+
 @router.delete("/{policy_name}")
 async def delete_policy_endpoint(
     policy_name: str,
     _: AuthUser = Depends(require_admin),
 ):
-    """Remove all indexed chunks for a given policy."""
+    """Remove all indexed chunks for a given policy and strip its registry entry."""
     deleted = delete_policy(policy_name)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Policy '{policy_name}' not found.")

@@ -22,6 +22,86 @@ CAT_TERM_EXTENSION = "term_extension"
 CAT_OTHER = "other"
 
 
+# Riders that ship built-in with a policy and therefore should NOT be suggested
+# again for that policy. Keys match policy_name in the registry (case-insensitive,
+# punctuation-tolerant lookup via _normalize).
+_BUILT_IN_BY_POLICY: Dict[str, set] = {
+    "flexlife":            {CAT_WAIVER_OF_PREMIUM},
+    "union assurance flexlife": {CAT_WAIVER_OF_PREMIUM},
+    "pension advantage":   {CAT_WAIVER_OF_PREMIUM},
+    "union pension advantage": {CAT_WAIVER_OF_PREMIUM},
+    "sisumaga+":           {CAT_WAIVER_OF_PREMIUM},
+    "sisumaga plus":       {CAT_WAIVER_OF_PREMIUM},
+    "union sisumaga plus": {CAT_WAIVER_OF_PREMIUM},
+}
+
+# Per-policy boosts. Each entry: (extra_score, reason). Drives differentiation
+# even when `covers_*` flags are identical across policies in the registry.
+_POLICY_NAME_BOOSTS: Dict[str, Dict[str, Tuple[float, str]]] = {
+    "pension advantage": {
+        CAT_INCOME_PROTECTION:    (0.25, "Pension Advantage is built for retirement income — this rider strengthens that focus."),
+        CAT_PERMANENT_DISABILITY: (0.15, "Disability cover protects the contributions that fund your future pension."),
+    },
+    "union pension advantage": {
+        CAT_INCOME_PROTECTION:    (0.25, "Pension Advantage is built for retirement income — this rider strengthens that focus."),
+        CAT_PERMANENT_DISABILITY: (0.15, "Disability cover protects the contributions that fund your future pension."),
+    },
+    "flexlife": {
+        CAT_CRITICAL_ILLNESS: (0.20, "FlexLife's flexible structure pairs well with broader illness protection."),
+        CAT_HOSPITAL_CASH:    (0.15, "FlexLife does not include hospital cash natively — this rider plugs that gap."),
+    },
+    "union assurance flexlife": {
+        CAT_CRITICAL_ILLNESS: (0.20, "FlexLife's flexible structure pairs well with broader illness protection."),
+        CAT_HOSPITAL_CASH:    (0.15, "FlexLife does not include hospital cash natively — this rider plugs that gap."),
+    },
+    "life plus": {
+        CAT_ACCIDENTAL_DEATH: (0.20, "Life+ has no built-in accident cover — this rider adds it."),
+        CAT_HOSPITAL_CASH:    (0.15, "Life+ does not pay daily hospital cash — this rider plugs that gap."),
+    },
+    "union life plus": {
+        CAT_ACCIDENTAL_DEATH: (0.20, "Life+ has no built-in accident cover — this rider adds it."),
+        CAT_HOSPITAL_CASH:    (0.15, "Life+ does not pay daily hospital cash — this rider plugs that gap."),
+    },
+    "single primium advantage": {
+        CAT_TERM_EXTENSION:   (0.25, "Single Premium Advantage's fixed term benefits from a term-extension option."),
+        CAT_ACCIDENTAL_DEATH: (0.15, "Adds an accident layer to a plan that is otherwise investment-led."),
+    },
+    "single premium advantage": {
+        CAT_TERM_EXTENSION:   (0.25, "Single Premium Advantage's fixed term benefits from a term-extension option."),
+        CAT_ACCIDENTAL_DEATH: (0.15, "Adds an accident layer to a plan that is otherwise investment-led."),
+    },
+    "advantage starter": {
+        CAT_CRITICAL_ILLNESS: (0.20, "Advantage Starter's lean base benefits from added illness protection."),
+        CAT_HOSPITAL_CASH:    (0.15, "Adds daily hospital cash on top of an entry-level base policy."),
+    },
+    "sisumaga+": {
+        CAT_ACCIDENTAL_DEATH:     (0.20, "Adds an accident payout on top of the education-protection base."),
+        CAT_INCOME_PROTECTION:    (0.15, "Income protection keeps your child's education fund on track."),
+    },
+}
+
+_POLICY_TYPE_BOOSTS: Dict[str, Dict[str, Tuple[float, str]]] = {
+    "term_life": {
+        CAT_TERM_EXTENSION:   (0.20, "Term-life plans benefit from extending cover beyond the original term."),
+        CAT_ACCIDENTAL_DEATH: (0.10, "A term plan with added accident cover gives broader death protection."),
+    },
+    "whole_life": {
+        CAT_CRITICAL_ILLNESS:     (0.10, "A whole-life base pairs well with critical-illness depth."),
+        CAT_PERMANENT_DISABILITY: (0.10, "Disability cover complements whole-life protection."),
+    },
+    "endowment": {
+        CAT_WAIVER_OF_PREMIUM: (0.10, "Endowment plans rely on completed premiums — waiver protects the maturity payout."),
+    },
+    "health": {
+        CAT_HOSPITAL_CASH: (0.10, "Pairs daily cash with the policy's hospitalisation coverage."),
+    },
+}
+
+
+def _normalize_policy_key(name: str) -> str:
+    return (name or "").strip().lower()
+
+
 def _user_has_any_health_condition(profile: UserProfile) -> bool:
     h = profile.health
     return any([
@@ -58,6 +138,12 @@ def score_rider(
         return 0.0, ["Not applicable to this policy."]
 
     category = (rider.get("category") or "other").lower()
+
+    # Hard filter: skip riders already built-in to this policy — suggesting
+    # them again would duplicate coverage the customer already has.
+    policy_key = _normalize_policy_key(policy_meta.get("policy_name", ""))
+    if category in _BUILT_IN_BY_POLICY.get(policy_key, set()):
+        return 0.0, [f"Already built into {policy_meta.get('policy_name')}."]
     health_relevant = bool(rider.get("health_relevant", False))
     hazard_relevant = bool(rider.get("hazard_relevant", False))
     dependents_relevant = bool(rider.get("dependents_relevant", False))
@@ -158,6 +244,20 @@ def score_rider(
     if target_goals and primary_goal in target_goals:
         score += 0.1
         reasons.append(f"Aligned with your primary goal ({primary_goal.replace('_', ' ')}).")
+
+    # ── Policy-specific boosts (drive per-policy differentiation) ──
+    name_boost = _POLICY_NAME_BOOSTS.get(policy_key, {}).get(category)
+    if name_boost:
+        score += name_boost[0]
+        reasons.append(name_boost[1])
+
+    type_boost = _POLICY_TYPE_BOOSTS.get(
+        (policy_meta.get("policy_type") or "").lower(), {}
+    ).get(category)
+    if type_boost:
+        score += type_boost[0]
+        if type_boost[1] not in reasons:
+            reasons.append(type_boost[1])
 
     # Clamp and de-duplicate reasons
     score = max(0.0, min(1.0, score))

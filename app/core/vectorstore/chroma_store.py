@@ -97,19 +97,67 @@ def get_all_policies() -> List[Dict[str, Any]]:
 
 
 def delete_policy(policy_name: str) -> bool:
-    """Delete all chunks for a given policy."""
+    """Delete all chunks for a given policy and strip its registry entry."""
+    deleted_chunks = 0
     try:
         client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
         collection = client.get_collection(settings.CHROMA_COLLECTION_NAME)
         results = collection.get(where={"policy_name": policy_name})
         if results["ids"]:
             collection.delete(ids=results["ids"])
-            logger.info(f"Deleted {len(results['ids'])} chunks for '{policy_name}'")
-            return True
-        return False
+            deleted_chunks = len(results["ids"])
+            logger.info(f"Deleted {deleted_chunks} chunks for '{policy_name}'")
     except Exception as e:
-        logger.error(f"Failed to delete policy '{policy_name}': {e}")
-        return False
+        logger.error(f"Failed to delete chunks for '{policy_name}': {e}")
+
+    removed_from_registry = False
+    if POLICY_REGISTRY_PATH.exists():
+        try:
+            with open(POLICY_REGISTRY_PATH, "r") as f:
+                reg = json.load(f)
+            if policy_name in reg:
+                reg.pop(policy_name)
+                with open(POLICY_REGISTRY_PATH, "w") as f:
+                    json.dump(reg, f, indent=2)
+                removed_from_registry = True
+                logger.info(f"Removed '{policy_name}' from policy registry")
+        except Exception as e:
+            logger.error(f"Failed to update policy registry for '{policy_name}': {e}")
+
+    return deleted_chunks > 0 or removed_from_registry
+
+
+def delete_all_policies() -> int:
+    """Wipe every policy: ChromaDB chunks (excl. rider chunks) + policy registry."""
+    deleted_chunks = 0
+    try:
+        client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+        collection = client.get_collection(settings.CHROMA_COLLECTION_NAME)
+        # Pull every chunk; keep rider chunks (doc_type="rider") so this only
+        # nukes policy chunks. Rider catalog has its own clear endpoint.
+        all_results = collection.get(include=["metadatas"])
+        ids = all_results.get("ids") or []
+        metas = all_results.get("metadatas") or []
+        policy_ids = [
+            cid
+            for cid, meta in zip(ids, metas)
+            if (meta or {}).get("doc_type") != "rider"
+        ]
+        if policy_ids:
+            collection.delete(ids=policy_ids)
+            deleted_chunks = len(policy_ids)
+            logger.info(f"Deleted {deleted_chunks} policy chunks (riders preserved)")
+    except Exception as e:
+        logger.error(f"delete_all_policies: chunk wipe failed: {e}")
+
+    if POLICY_REGISTRY_PATH.exists():
+        try:
+            POLICY_REGISTRY_PATH.unlink()
+            logger.info("Cleared policy registry file")
+        except Exception as e:
+            logger.error(f"Failed to clear policy registry: {e}")
+
+    return deleted_chunks
 
 
 # ─── Policy Registry (for scorer) ────────────────────────────────────────────
