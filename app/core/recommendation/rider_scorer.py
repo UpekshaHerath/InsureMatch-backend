@@ -22,18 +22,137 @@ CAT_TERM_EXTENSION = "term_extension"
 CAT_OTHER = "other"
 
 
-# Riders that ship built-in with a policy and therefore should NOT be suggested
-# again for that policy. Keys match policy_name in the registry (case-insensitive,
-# punctuation-tolerant lookup via _normalize).
-_BUILT_IN_BY_POLICY: Dict[str, set] = {
-    "flexlife":            {CAT_WAIVER_OF_PREMIUM},
-    "union assurance flexlife": {CAT_WAIVER_OF_PREMIUM},
-    "pension advantage":   {CAT_WAIVER_OF_PREMIUM},
-    "union pension advantage": {CAT_WAIVER_OF_PREMIUM},
-    "sisumaga+":           {CAT_WAIVER_OF_PREMIUM},
-    "sisumaga plus":       {CAT_WAIVER_OF_PREMIUM},
-    "union sisumaga plus": {CAT_WAIVER_OF_PREMIUM},
+# Per-policy inbuilt rider catalog. Sourced from the consolidated Union Assurance
+# product reference (see project_client.md). Each entry is the canonical inbuilt
+# rider record returned to the frontend AND used to suppress duplicate add-on
+# suggestions. Keys match policy_name normalized via `_normalize_policy_key`.
+_INBUILT_RIDERS_BY_POLICY: Dict[str, List[Dict[str, str]]] = {
+    "advantage starter": [
+        {"rider_name": "Death Cover", "rider_code": "DEATH-COVER", "category": "death_cover",
+         "description": "Lump sum financial benefit to beneficiaries on the life assured's untimely demise during the policy term."},
+        {"rider_name": "Continuous Fund Accumulation", "rider_code": "FUND-ACCUMULATION", "category": "investment",
+         "description": "Built-in investment account where premiums and annual dividends accumulate toward a maturity payout."},
+    ],
+    "union advantage starter": [],  # alias filled below
+
+    "flexlife": [
+        {"rider_name": "Death Cover", "rider_code": "DEATH-COVER", "category": "death_cover",
+         "description": "Lump sum payment to loved ones on the life assured's untimely demise."},
+        {"rider_name": "Waiver of Premium on Death", "rider_code": "WAIVER-OF-PREMIUM-ON-DEATH", "category": CAT_WAIVER_OF_PREMIUM,
+         "description": "Future premiums for the basic death cover are waived if the life assured passes away during the premium paying term."},
+        {"rider_name": "Waiver of Premium on Total Permanent Disability", "rider_code": "WAIVER-OF-PREMIUM-ON-TPD", "category": CAT_WAIVER_OF_PREMIUM,
+         "description": "Future premiums waived if the life assured becomes totally and permanently disabled during the premium paying term."},
+    ],
+    "union flexlife": [],  # alias
+    "union assurance flexlife": [],  # alias
+
+    "health 360": [
+        {"rider_name": "Hospitalisation Benefit", "rider_code": "HOSPITALISATION", "category": "hospitalisation",
+         "description": "Covers hospital room, board, and ICU expenses as per actuals."},
+        {"rider_name": "Surgical Benefit", "rider_code": "SURGICAL", "category": "surgery",
+         "description": "Fees for surgeons, anaesthetists, consultants, and specialists for medical procedures."},
+        {"rider_name": "Miscellaneous Hospital Services", "rider_code": "MISC-HOSPITAL", "category": "hospitalisation",
+         "description": "Covers operation theatre charges, oxygen, blood, and prescribed drugs."},
+        {"rider_name": "In-Built Critical Illness Cover", "rider_code": "INBUILT-CI", "category": CAT_CRITICAL_ILLNESS,
+         "description": "Coverage for critical illnesses included in the base plan."},
+        {"rider_name": "Day Care Surgery Benefit", "rider_code": "DAYCARE-SURGERY", "category": "surgery",
+         "description": "Surgeries and hospital stays under 24 hours for listed procedures."},
+        {"rider_name": "Pre and Post Hospitalisation Benefits", "rider_code": "PRE-POST-HOSP", "category": "hospitalisation",
+         "description": "Reimburses medical expenses 30 days before admission and 30 days after discharge."},
+        {"rider_name": "Ambulance Fees", "rider_code": "AMBULANCE", "category": "hospitalisation",
+         "description": "Licensed ambulance service charges up to 2% of the basic annual sum insured."},
+        {"rider_name": "Organ Donor Expenses", "rider_code": "ORGAN-DONOR", "category": "specialist_medical",
+         "description": "Donor's hospitalisation costs covered within the recipient's overall sum insured."},
+        {"rider_name": "Prosthesis and Implants", "rider_code": "PROSTHESIS", "category": "specialist_medical",
+         "description": "Medical implants and prosthetics up to 70% of the annual sum insured."},
+        {"rider_name": "Annual Limit Reinstatement", "rider_code": "LIMIT-REINSTATE", "category": "hospitalisation",
+         "description": "Full benefit amount reinstated for an unrelated medical emergency in the same year."},
+        {"rider_name": "25% Claim-Free Year Bonus", "rider_code": "NCB-25", "category": "loyalty",
+         "description": "Coverage limit increases by 25% for every claim-free year."},
+        {"rider_name": "Wellbeing Cover", "rider_code": "WELLBEING", "category": "preventive",
+         "description": "Free health check-ups (up to 2% of sum insured) after two consecutive claim-free years."},
+    ],
+    "health360": [],  # alias
+    "union health 360": [],  # alias
+    "union health360": [],  # alias
+
+    "life plus": [
+        {"rider_name": "Death Cover (Higher of BSA or Fund)", "rider_code": "DEATH-COVER-HIGHER-OF", "category": "death_cover",
+         "description": "Beneficiaries receive either the Basic Sum Assured or the investment account balance, whichever is higher."},
+        {"rider_name": "Continuous Fund Accumulation", "rider_code": "FUND-ACCUMULATION", "category": "investment",
+         "description": "Built-in investment account that grows monthly through premium contributions and annual dividends."},
+    ],
+    "union life plus": [],  # alias
+    "life+": [],  # alias
+
+    "pension advantage": [
+        {"rider_name": "Pension Fund Accumulation", "rider_code": "PENSION-FUND", "category": "investment",
+         "description": "Dedicated retirement account that grows through contributions and dividends."},
+        {"rider_name": "Pension Payout (Lump Sum or Monthly)", "rider_code": "PENSION-PAYOUT", "category": "pension_payout",
+         "description": "Receive the fund as a single lump sum or as a structured monthly pension over 10, 15, or 20 years."},
+        {"rider_name": "Premium Waiver on Death", "rider_code": "WAIVER-OF-PREMIUM-ON-DEATH", "category": CAT_WAIVER_OF_PREMIUM,
+         "description": "Company continues paying premiums until maturity if the policyholder passes away."},
+        {"rider_name": "Premium Waiver on Total Permanent Disability", "rider_code": "WAIVER-OF-PREMIUM-ON-TPD", "category": CAT_WAIVER_OF_PREMIUM,
+         "description": "Future premiums waived if the policyholder becomes disabled due to accident or sickness."},
+        {"rider_name": "Withdrawal Benefit", "rider_code": "WITHDRAWAL", "category": "withdrawal",
+         "description": "One-time emergency withdrawal of up to 15% after three policy years."},
+    ],
+    "union pension advantage": [],  # alias
+
+    "single premium advantage": [
+        {"rider_name": "Death Cover", "rider_code": "DEATH-COVER-105", "category": "death_cover",
+         "description": "Guaranteed benefit of 105% of the initial single premium."},
+        {"rider_name": "Dedicated Investment Account", "rider_code": "INVESTMENT-ACCOUNT", "category": "investment",
+         "description": "One-time premium compounds through annual dividends across the policy term."},
+    ],
+    "single primium advantage": [],  # alias (registry typo)
+    "union single premium advantage": [],  # alias
+
+    "sisumaga+": [
+        {"rider_name": "Life Cover (5x Basic Annual Premium)", "rider_code": "LIFE-COVER-5X", "category": "death_cover",
+         "description": "Immediate lump-sum payment to the family on the parent's demise."},
+        {"rider_name": "Education Assistance Fee Benefit", "rider_code": "EDU-ASSIST", "category": "education_income",
+         "description": "Consistent monthly income paid to the family until policy maturity."},
+        {"rider_name": "Waiver of Premium on Death", "rider_code": "WAIVER-OF-PREMIUM-ON-DEATH", "category": CAT_WAIVER_OF_PREMIUM,
+         "description": "Union Assurance continues paying premiums if the parent passes away."},
+        {"rider_name": "Education Fund Accumulation", "rider_code": "EDU-FUND", "category": "investment",
+         "description": "Dedicated fund growing toward higher-education milestones."},
+        {"rider_name": "15% Loyalty Bonus", "rider_code": "LOYALTY-15", "category": "loyalty",
+         "description": "Additional 15% bonus added to the fund at maturity."},
+    ],
+    "sisumaga plus": [],  # alias
+    "union sisumaga plus": [],  # alias
 }
+
+# Fill aliases (any empty list copies the canonical entry).
+_ALIAS_MAP = {
+    "union advantage starter": "advantage starter",
+    "union flexlife": "flexlife",
+    "union assurance flexlife": "flexlife",
+    "health360": "health 360",
+    "union health 360": "health 360",
+    "union health360": "health 360",
+    "union life plus": "life plus",
+    "life+": "life plus",
+    "union pension advantage": "pension advantage",
+    "single primium advantage": "single premium advantage",
+    "union single premium advantage": "single premium advantage",
+    "sisumaga plus": "sisumaga+",
+    "union sisumaga plus": "sisumaga+",
+}
+for _alias, _canonical in _ALIAS_MAP.items():
+    if not _INBUILT_RIDERS_BY_POLICY.get(_alias):
+        _INBUILT_RIDERS_BY_POLICY[_alias] = _INBUILT_RIDERS_BY_POLICY[_canonical]
+
+
+def _inbuilt_name_set(policy_key: str) -> set:
+    """Lowercased rider names already inbuilt for this policy (used for add-on dedup)."""
+    return {r["rider_name"].strip().lower() for r in _INBUILT_RIDERS_BY_POLICY.get(policy_key, [])}
+
+
+def _inbuilt_category_set(policy_key: str) -> set:
+    """Categories with at least one inbuilt rider (kept for back-compat)."""
+    return {r["category"] for r in _INBUILT_RIDERS_BY_POLICY.get(policy_key, [])}
 
 # Per-policy boosts. Each entry: (extra_score, reason). Drives differentiation
 # even when `covers_*` flags are identical across policies in the registry.
@@ -140,9 +259,14 @@ def score_rider(
     category = (rider.get("category") or "other").lower()
 
     # Hard filter: skip riders already built-in to this policy — suggesting
-    # them again would duplicate coverage the customer already has.
+    # them again would duplicate coverage the customer already has. Match
+    # primarily by rider_name (authoritative per inbuilt catalog) and fall
+    # back to category for legacy registry entries.
     policy_key = _normalize_policy_key(policy_meta.get("policy_name", ""))
-    if category in _BUILT_IN_BY_POLICY.get(policy_key, set()):
+    rider_name_norm = (rider.get("rider_name") or "").strip().lower()
+    if rider_name_norm and rider_name_norm in _inbuilt_name_set(policy_key):
+        return 0.0, [f"Already built into {policy_meta.get('policy_name')}."]
+    if category in _inbuilt_category_set(policy_key):
         return 0.0, [f"Already built into {policy_meta.get('policy_name')}."]
     health_relevant = bool(rider.get("health_relevant", False))
     hazard_relevant = bool(rider.get("hazard_relevant", False))
@@ -270,12 +394,25 @@ def score_rider(
     return score, deduped
 
 
+def get_inbuilt_riders(
+    policy_meta: Dict[str, Any],
+    rider_registry: Dict[str, Dict[str, Any]],  # kept for signature compat; unused
+) -> List[Dict[str, Any]]:
+    """
+    Return riders bundled with this policy directly from the canonical inbuilt
+    catalog (`_INBUILT_RIDERS_BY_POLICY`). Source: Union Assurance product
+    reference. Independent of the rider_registry / ChromaDB ingestion state.
+    """
+    policy_key = _normalize_policy_key(policy_meta.get("policy_name", ""))
+    return [dict(r) for r in _INBUILT_RIDERS_BY_POLICY.get(policy_key, [])]
+
+
 def rank_riders_for_policy(
     profile: UserProfile,
     policy_meta: Dict[str, Any],
     rider_registry: Dict[str, Dict[str, Any]],
     top_n: int = 3,
-    min_score: float = 0.25,
+    min_score: float = 0.1,
 ) -> List[Dict[str, Any]]:
     """Return up to top_n riders (best first) that close a real gap for this user."""
     scored = []

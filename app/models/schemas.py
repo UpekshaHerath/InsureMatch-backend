@@ -183,6 +183,14 @@ class RiderRecommendation(BaseModel):
     reasons: List[str] = Field(default_factory=list)
 
 
+class InbuiltRider(BaseModel):
+    """A rider already bundled into the base policy (no add-on cost)."""
+    rider_name: str
+    rider_code: str
+    category: str
+    description: Optional[str] = None
+
+
 class RecommendationResponse(BaseModel):
     ranked_policies: List[PolicyScore]
     top_recommendation: str
@@ -191,6 +199,8 @@ class RecommendationResponse(BaseModel):
     session_id: str
     # policy_name → ranked rider suggestions (best fit first)
     rider_suggestions: Dict[str, List[RiderRecommendation]] = Field(default_factory=dict)
+    # policy_name → inbuilt riders bundled with the base policy
+    inbuilt_riders: Dict[str, List[InbuiltRider]] = Field(default_factory=dict)
 
 
 class ChatRequest(BaseModel):
