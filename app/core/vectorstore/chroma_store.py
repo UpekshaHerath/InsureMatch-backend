@@ -1,6 +1,9 @@
-__import__("pysqlite3")
-import sys
-sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+try:
+    __import__("pysqlite3")
+    import sys
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ModuleNotFoundError:
+    pass
 
 import logging
 import json
@@ -74,6 +77,8 @@ def get_all_policies() -> List[Dict[str, Any]]:
         seen = {}
         for meta in results["metadatas"]:
             name = meta.get("policy_name", "unknown")
+            if name == "__riders_bundle__":
+                continue
             if name not in seen:
                 seen[name] = {
                     "policy_name": name,
