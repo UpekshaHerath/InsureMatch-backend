@@ -105,11 +105,8 @@ async def insert_recommendation(user_id: str, session_id: str, resp) -> None:
     for policy_name, riders in raw.items():
         rider_suggestions[policy_name] = [r.model_dump() for r in riders]
 
-    inbuilt_riders = {}
-    raw_inbuilt = getattr(resp, "inbuilt_riders", {}) or {}
-    for policy_name, riders in raw_inbuilt.items():
-        inbuilt_riders[policy_name] = [r.model_dump() for r in riders]
-
+    # inbuilt_riders intentionally NOT persisted — derived from policy_name on
+    # the client (UNION_POLICIES map) and on the backend (_INBUILT_RIDERS_BY_POLICY).
     payload = {
         "user_id": user_id,
         "session_id": session_id,
@@ -118,7 +115,6 @@ async def insert_recommendation(user_id: str, session_id: str, resp) -> None:
         "explanations": [e.model_dump() for e in resp.explanations],
         "rag_narrative": resp.rag_narrative,
         "rider_suggestions": rider_suggestions,
-        "inbuilt_riders": inbuilt_riders,
     }
     await _request(
         "POST", "/recommendations",
