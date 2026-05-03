@@ -34,6 +34,26 @@ async def _request(method: str, path: str, **kwargs) -> Any:
     return r.json()
 
 
+async def _request_with_count(method: str, path: str, **kwargs) -> tuple[Any, int]:
+    """Like _request but also returns the total row count from Content-Range."""
+    url = f"{_BASE}{path}"
+    extra_headers = kwargs.pop("headers", {})
+    headers = {**_HEADERS, "Prefer": "count=exact", **extra_headers}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.request(method, url, headers=headers, **kwargs)
+    if r.status_code >= 400:
+        logger.error(f"Supabase {method} {path} → {r.status_code}: {r.text[:300]}")
+        r.raise_for_status()
+    data = r.json() if r.content else []
+    total = 0
+    cr = r.headers.get("content-range") or r.headers.get("Content-Range")
+    if cr and "/" in cr:
+        tail = cr.split("/", 1)[1].strip()
+        if tail.isdigit():
+            total = int(tail)
+    return data, total
+
+
 # ─── profiles ────────────────────────────────────────────────────────────────
 
 def _flatten_profile(user_id: str, profile) -> Dict[str, Any]:
@@ -128,6 +148,31 @@ async def list_recommendations(user_id: str, limit: int = 20) -> List[Dict[str, 
         "GET",
         f"/recommendations?user_id=eq.{user_id}&select=*&order=created_at.desc&limit={limit}",
     ) or []
+
+
+_REC_LIST_COLS = (
+    "id,session_id,top_recommendation,ranked_policies,"
+    "explanations,rider_suggestions,created_at"
+)
+
+
+async def list_recommendations_paginated(
+    user_id: str,
+    page: int = 1,
+    page_size: int = 5,
+) -> tuple[List[Dict[str, Any]], int]:
+    """Return a page of recommendations and the total row count for the user."""
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    offset = (page - 1) * page_size
+    rows, total = await _request_with_count(
+        "GET",
+        f"/recommendations?user_id=eq.{user_id}"
+        f"&select={_REC_LIST_COLS}"
+        f"&order=created_at.desc.nullslast,id.desc"
+        f"&limit={page_size}&offset={offset}",
+    )
+    return rows or [], total
 
 
 # ─── chat sessions + messages ───────────────────────────────────────────────
