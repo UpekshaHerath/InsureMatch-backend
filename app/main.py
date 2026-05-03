@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.routes import ingest, recommend, explain, chat, policies, riders
+from app.api.routes import ingest, recommend, recommendations, explain, chat, policies, riders
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +67,7 @@ app.add_middleware(
 # ─── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(ingest.router)
 app.include_router(recommend.router)
+app.include_router(recommendations.router)
 app.include_router(explain.router)
 app.include_router(chat.router)
 app.include_router(policies.router)
