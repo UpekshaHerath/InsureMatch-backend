@@ -32,10 +32,9 @@ def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -
     entries are constrained to the known_policy_names list (prompt enforces this,
     we also filter defensively).
     """
-    # Big max_tokens — extracting many riders produces long JSON arrays.
-    llm = get_groq_llm(temperature=0.0, max_tokens=16000)
+    llm = get_groq_llm(temperature=0.0)
     prompt = RIDERS_EXTRACTION_PROMPT.format(
-        document_excerpt=document_text[:32000],
+        document_excerpt=document_text[:8000],
         known_policy_names="\n".join(f"- {n}" for n in known_policy_names) or "(none)",
     )
     try:

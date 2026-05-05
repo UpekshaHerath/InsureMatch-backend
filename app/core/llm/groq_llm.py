@@ -2,12 +2,12 @@ from langchain_groq import ChatGroq
 from app.config import settings
 
 
-def get_groq_llm(temperature: float = 0.1, max_tokens: int = 4096) -> ChatGroq:
+def get_groq_llm(temperature: float = 0.1) -> ChatGroq:
     return ChatGroq(
         groq_api_key=settings.GROQ_API_KEY,
         model_name=settings.GROQ_MODEL,
         temperature=temperature,
-        max_tokens=max_tokens,
+        max_tokens=4096,
     )
 
 
