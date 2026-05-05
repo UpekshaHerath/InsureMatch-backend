@@ -14,6 +14,7 @@ from app.core.rag.prompts import (
     RIDERS_EXTRACTION_PROMPT,
 )
 from app.core.vectorstore.chroma_store import similarity_search, similarity_search_for_policy
+from app.core.recommendation.rider_scorer import _ALIAS_MAP
 from app.models.schemas import UserProfile, PolicyMetadata
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -
     """
     llm = get_groq_llm(temperature=0.0)
     prompt = RIDERS_EXTRACTION_PROMPT.format(
-        document_excerpt=document_text[:8000],
+        document_excerpt=document_text[:32000],
         known_policy_names="\n".join(f"- {n}" for n in known_policy_names) or "(none)",
     )
     try:
@@ -49,7 +50,13 @@ def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -
         logger.error(f"Rider extraction failed: {e}")
         return []
 
-    valid_policy_set = set(known_policy_names)
+    # Build canonical-key map so LLM output ("FlexLife") resolves to registry
+    # canonical name ("flexlife"), tolerating case/spacing/alias drift.
+    def _canon(s: str) -> str:
+        n = (s or "").strip().lower()
+        return _ALIAS_MAP.get(n, n)
+
+    canon_to_registry = {_canon(p): p for p in known_policy_names}
     out: List[Dict[str, Any]] = []
     seen_codes = set()
     for r in riders:
@@ -63,7 +70,11 @@ def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -
             # de-dup codes extracted twice by LLM
             continue
         seen_codes.add(code)
-        applicable = [p for p in (r.get("applicable_policies") or []) if p in valid_policy_set]
+        applicable = []
+        for p in (r.get("applicable_policies") or []):
+            canon = _canon(p)
+            if canon in canon_to_registry:
+                applicable.append(canon_to_registry[canon])
         out.append({
             "rider_name": name,
             "rider_code": code,
