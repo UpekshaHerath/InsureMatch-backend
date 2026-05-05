@@ -221,6 +221,12 @@ def _normalize_policy_key(name: str) -> str:
     return (name or "").strip().lower()
 
 
+def _canonical_policy_key(name: str) -> str:
+    """Normalize then resolve aliases to canonical form (e.g. 'union flexlife' -> 'flexlife')."""
+    key = _normalize_policy_key(name)
+    return _ALIAS_MAP.get(key, key)
+
+
 def _user_has_any_health_condition(profile: UserProfile) -> bool:
     h = profile.health
     return any([
@@ -251,10 +257,14 @@ def score_rider(
     if age < int(rider.get("min_age", 18)) or age > int(rider.get("max_age", 65)):
         return 0.0, [f"Outside this rider's age range ({rider.get('min_age')}–{rider.get('max_age')})."]
 
-    # Hard filter: applicability list must contain the base policy
+    # Hard filter: applicability list must contain the base policy.
+    # Compare canonical keys so case/spacing/alias drift doesn't kill matches.
     applicable = rider.get("applicable_policies") or []
-    if applicable and policy_meta.get("policy_name") not in applicable:
-        return 0.0, ["Not applicable to this policy."]
+    if applicable:
+        pname_canon = _canonical_policy_key(policy_meta.get("policy_name", ""))
+        applicable_canon = {_canonical_policy_key(a) for a in applicable}
+        if pname_canon not in applicable_canon:
+            return 0.0, ["Not applicable to this policy."]
 
     category = (rider.get("category") or "other").lower()
 
