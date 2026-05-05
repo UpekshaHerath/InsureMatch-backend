@@ -32,7 +32,8 @@ def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -
     entries are constrained to the known_policy_names list (prompt enforces this,
     we also filter defensively).
     """
-    llm = get_groq_llm(temperature=0.0)
+    # Big max_tokens — extracting many riders produces long JSON arrays.
+    llm = get_groq_llm(temperature=0.0, max_tokens=16000)
     prompt = RIDERS_EXTRACTION_PROMPT.format(
         document_excerpt=document_text[:32000],
         known_policy_names="\n".join(f"- {n}" for n in known_policy_names) or "(none)",
@@ -48,6 +49,10 @@ def extract_riders_with_llm(document_text: str, known_policy_names: List[str]) -
         riders = data.get("riders", []) if isinstance(data, dict) else []
     except Exception as e:
         logger.error(f"Rider extraction failed: {e}")
+        try:
+            logger.error(f"Raw LLM output (last 500 chars): ...{result.content[-500:]}")
+        except Exception:
+            pass
         return []
 
     # Build canonical-key map so LLM output ("FlexLife") resolves to registry
