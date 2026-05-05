@@ -54,6 +54,11 @@ async def ingest_riders(
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
         tmp_path = tmp.name
         content = await file.read()
+        if not content or len(content) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Uploaded file '{file.filename}' is empty or too small. Re-select the file and retry.",
+            )
         tmp.write(content)
 
     try:
@@ -61,8 +66,13 @@ async def ingest_riders(
         if not docs:
             raise HTTPException(status_code=422, detail="Could not extract text from the document.")
 
-        full_text = " ".join(d.page_content for d in docs)
-        logger.info(f"Extracting riders with LLM from '{file.filename}'…")
+        full_text = " ".join(d.page_content for d in docs).strip()
+        if len(full_text) < 50:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Document text is empty or too short ({len(full_text)} chars). File may be corrupt or unreadable.",
+            )
+        logger.info(f"Extracting riders with LLM from '{file.filename}' ({len(full_text)} chars)…")
         riders = extract_riders_with_llm(full_text, known_policy_names)
 
         if not riders:

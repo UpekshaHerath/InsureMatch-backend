@@ -55,6 +55,11 @@ async def ingest_document(
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
         tmp_path = tmp.name
         content = await file.read()
+        if not content or len(content) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Uploaded file '{file.filename}' is empty or too small. Re-select the file and retry.",
+            )
         tmp.write(content)
 
     try:
@@ -64,7 +69,12 @@ async def ingest_document(
             raise HTTPException(status_code=422, detail="Could not extract text from the document.")
 
         # Build metadata — use provided values or extract with LLM
-        full_text = " ".join(d.page_content for d in docs)
+        full_text = " ".join(d.page_content for d in docs).strip()
+        if len(full_text) < 50:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Document text is empty or too short ({len(full_text)} chars). File may be corrupt or unreadable.",
+            )
         if not policy_name or not policy_type:
             logger.info(f"Extracting metadata with LLM for {file.filename}…")
             extracted = extract_policy_metadata_with_llm(full_text, file.filename)
